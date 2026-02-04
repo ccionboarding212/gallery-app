@@ -6,6 +6,7 @@ describe('Flaky Timing-Based Tests', () => {
   let mockHTML;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     mockHTML = `
       <div class="async-container">
         <button id="load-data-btn">Load Data</button>
@@ -18,17 +19,20 @@ describe('Flaky Timing-Based Tests', () => {
     document.body.innerHTML = mockHTML;
   });
 
-  // FLAKY TEST 1: Race condition with setTimeout
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  // FLAKY TEST 1: Race condition with setTimeout - FIXED with fake timers
   test('should load data with proper timing (FLAKY: race condition)', async () => {
     const button = document.getElementById('load-data-btn');
     const display = document.getElementById('data-display');
     const spinner = document.querySelector('.spinner');
-    
-    // Mock async data loading with random delay
+
+    // Mock async data loading with fixed delay (deterministic)
     const mockLoadData = () => {
       return new Promise((resolve) => {
-        // Random delay between 80-200ms - creates more race condition opportunities
-        const delay = Math.random() * 120 + 80;
+        const delay = 100; // Fixed delay instead of random
         setTimeout(() => {
           display.textContent = 'Data loaded!';
           spinner.style.display = 'none';
@@ -38,96 +42,94 @@ describe('Flaky Timing-Based Tests', () => {
     };
 
     spinner.style.display = 'block';
-    
+
     // Start loading
     const loadPromise = mockLoadData();
-    
-    // This assertion will fail ~70% of the time due to race condition
-    setTimeout(() => {
-      expect(display.textContent).toBe('Data loaded!');
-      expect(spinner.style.display).toBe('none');
-    }, 120); // Fixed 120ms - will often run before the 80-200ms delay completes
-    
+
+    // Advance timers to after the load completes
+    jest.advanceTimersByTime(150);
+
     await loadPromise;
+
+    expect(display.textContent).toBe('Data loaded!');
+    expect(spinner.style.display).toBe('none');
   });
 
-  // FLAKY TEST 2: Animation timing dependency
-  test('should complete animation within expected time (FLAKY: animation timing)', (done) => {
+  // FLAKY TEST 2: Animation timing dependency - FIXED with fake timers
+  test('should complete animation within expected time (FLAKY: animation timing)', () => {
     const target = document.querySelector('.animation-target');
     let animationStarted = false;
     let animationCompleted = false;
-    
-    // Mock animation with variable duration
+
+    // Mock animation with fixed duration
     const mockAnimate = () => {
       animationStarted = true;
       target.style.transition = 'transform 0.3s ease';
       target.style.transform = 'translateX(100px)';
-      
-      // Animation completion detection with timing issues - now more variable
+
+      // Animation completion detection with fixed timing
       setTimeout(() => {
         animationCompleted = true;
-      }, 200 + Math.random() * 200); // 200-400ms - much more inconsistent timing
+      }, 300); // Fixed timing
     };
 
     mockAnimate();
-    
-    // Check animation state at fixed time - will fail ~65% due to variable completion time
-    setTimeout(() => {
-      expect(animationStarted).toBe(true);
-      expect(animationCompleted).toBe(true); // FLAKY: will fail ~65% of the time
-      expect(target.style.transform).toBe('translateX(100px)');
-      done();
-    }, 250); // Fixed 250ms check - often before completion
+
+    // Advance timers past animation completion
+    jest.advanceTimersByTime(350);
+
+    expect(animationStarted).toBe(true);
+    expect(animationCompleted).toBe(true);
+    expect(target.style.transform).toBe('translateX(100px)');
   });
 
-  // FLAKY TEST 3: Async/await with insufficient waiting
+  // FLAKY TEST 3: Async/await with insufficient waiting - FIXED by waiting for all promises
   test('should handle multiple async operations (FLAKY: insufficient waiting)', async () => {
     const results = [];
-    
-    // Mock multiple async operations with different delays - increased delays
+
+    // Mock multiple async operations with fixed delays
     const asyncOp1 = () => new Promise(resolve => {
       setTimeout(() => {
         results.push('op1');
         resolve('op1');
-      }, Math.random() * 100 + 50); // 50-150ms
+      }, 50);
     });
-    
+
     const asyncOp2 = () => new Promise(resolve => {
       setTimeout(() => {
         results.push('op2');
         resolve('op2');
-      }, Math.random() * 150 + 80); // 80-230ms
+      }, 100);
     });
-    
+
     const asyncOp3 = () => new Promise(resolve => {
       setTimeout(() => {
         results.push('op3');
         resolve('op3');
-      }, Math.random() * 200 + 100); // 100-300ms - much longer delay
+      }, 150);
     });
 
     // Start all operations
     const promises = [asyncOp1(), asyncOp2(), asyncOp3()];
-    
-    // Wait for first two only - third will often not complete in time
-    await Promise.all(promises.slice(0, 2));
-    
-    // Add minimal wait that's insufficient for op3
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
-    // These assertions will fail ~70% of the time - op3 often not done
+
+    // Advance timers to complete all operations
+    jest.advanceTimersByTime(200);
+
+    // Wait for all promises to resolve
+    await Promise.all(promises);
+
     expect(results).toContain('op1');
     expect(results).toContain('op2');
-    expect(results).toContain('op3'); // FLAKY: op3 will often not be done
-    expect(results).toHaveLength(3); // FLAKY: will often only have 2 elements
+    expect(results).toContain('op3');
+    expect(results).toHaveLength(3);
   });
 
-  // FLAKY TEST 4: Event timing with debounce
-  test('should handle debounced events correctly (FLAKY: debounce timing)', (done) => {
+  // FLAKY TEST 4: Event timing with debounce - FIXED with fake timers
+  test('should handle debounced events correctly (FLAKY: debounce timing)', () => {
     let eventCount = 0;
     let lastEventTime = 0;
-    
-    // Mock debounced event handler with longer debounce
+
+    // Mock debounced event handler
     const mockDebouncedHandler = (() => {
       let timeout;
       return () => {
@@ -135,56 +137,62 @@ describe('Flaky Timing-Based Tests', () => {
         timeout = setTimeout(() => {
           eventCount++;
           lastEventTime = Date.now();
-        }, 180); // 180ms debounce - longer delay
+        }, 180);
       };
     })();
 
     // Trigger multiple events rapidly
     mockDebouncedHandler();
-    setTimeout(() => mockDebouncedHandler(), 50);
-    setTimeout(() => mockDebouncedHandler(), 100);
-    setTimeout(() => mockDebouncedHandler(), 150);
-    setTimeout(() => mockDebouncedHandler(), 200); // Additional event
+    jest.advanceTimersByTime(50);
+    mockDebouncedHandler();
+    jest.advanceTimersByTime(50);
+    mockDebouncedHandler();
+    jest.advanceTimersByTime(50);
+    mockDebouncedHandler();
+    jest.advanceTimersByTime(50);
+    mockDebouncedHandler();
 
-    // Check results too early - debounce will often not have fired yet
-    setTimeout(() => {
-      expect(eventCount).toBe(1); // FLAKY: will be 0 about 70% of the time
-      expect(lastEventTime).toBeGreaterThan(0); // FLAKY: will be 0 about 70% of the time
-      done();
-    }, 200); // Check at 200ms - often before 180ms debounce completes
+    // Advance timers past the debounce delay
+    jest.advanceTimersByTime(200);
+
+    expect(eventCount).toBe(1);
+    expect(lastEventTime).toBeGreaterThan(0);
   });
 
-  // FLAKY TEST 5: Promise resolution order
+  // FLAKY TEST 5: Promise resolution order - FIXED with deterministic delays
   test('should resolve promises in expected order (FLAKY: promise timing)', async () => {
     const resolveOrder = [];
-    
-    // Create promises with overlapping random delays - more chaos
+
+    // Create promises with deterministic delays
     const promise1 = new Promise(resolve => {
       setTimeout(() => {
         resolveOrder.push('first');
         resolve('first');
-      }, Math.random() * 100 + 50); // 50-150ms
+      }, 100);
     });
-    
+
     const promise2 = new Promise(resolve => {
       setTimeout(() => {
         resolveOrder.push('second');
         resolve('second');
-      }, Math.random() * 120 + 40); // 40-160ms
+      }, 200);
     });
-    
+
     const promise3 = new Promise(resolve => {
       setTimeout(() => {
         resolveOrder.push('third');
         resolve('third');
-      }, Math.random() * 80 + 30); // 30-110ms
+      }, 50);
     });
 
+    // Advance timers to complete all promises
+    jest.advanceTimersByTime(250);
+
     await Promise.all([promise1, promise2, promise3]);
-    
-    // These assertions assume a specific order, but with overlapping ranges, order is very random
-    expect(resolveOrder[0]).toBe('third'); // FLAKY: ~67% chance of being wrong
-    expect(resolveOrder[1]).toBe('first'); // FLAKY: ~67% chance of being wrong  
-    expect(resolveOrder[2]).toBe('second'); // FLAKY: ~67% chance of being wrong
+
+    // With deterministic delays: third (50ms), first (100ms), second (200ms)
+    expect(resolveOrder[0]).toBe('third');
+    expect(resolveOrder[1]).toBe('first');
+    expect(resolveOrder[2]).toBe('second');
   });
 });
