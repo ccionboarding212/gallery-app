@@ -1,4 +1,4 @@
-# This config was automatically generated from your source code
+# This config was automatically generated from your source code. Adding this line to trigger a pipeline
 # Stacks detected: cicd:github-actions:.github/workflows,deps:node:.,package_manager:yarn:,test:jest:
 version: 2.1
 orbs:
