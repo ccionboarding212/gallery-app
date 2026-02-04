@@ -17,11 +17,17 @@ describe('Flaky Environment-Dependent Tests', () => {
     document.body.innerHTML = mockHTML;
   });
 
-  // FLAKY TEST 35: User Agent detection
+  // FLAKY TEST 35: User Agent detection - FIXED with mocked navigator
   test('should detect correct browser (FLAKY: user agent dependent)', () => {
     const userAgentDisplay = document.getElementById('user-agent-display');
-    
-    // Mock browser detection
+
+    // Mock browser detection with mocked user agent
+    const mockUserAgent = 'Mozilla/5.0 (Test Browser) Chrome/100.0';
+    Object.defineProperty(navigator, 'userAgent', {
+      value: mockUserAgent,
+      configurable: true
+    });
+
     const mockDetectBrowser = () => {
       const userAgent = navigator.userAgent;
       if (userAgent.includes('Chrome')) return 'Chrome';
@@ -32,19 +38,33 @@ describe('Flaky Environment-Dependent Tests', () => {
 
     const detectedBrowser = mockDetectBrowser();
     userAgentDisplay.textContent = detectedBrowser;
-    
-    // These assertions assume very specific browser - will fail in most environments
-    expect(detectedBrowser).toBe('Firefox'); // FLAKY: likely wrong in most test environments
-    expect(navigator.userAgent).toContain('Safari'); // FLAKY: likely wrong in most environments
-    expect(navigator.userAgent).toContain('Edge'); // FLAKY: likely wrong in most environments
-    expect(userAgentDisplay.textContent).toBe('Internet Explorer'); // FLAKY: very unlikely to be IE
-    expect(detectedBrowser).toBe('Opera'); // FLAKY: very unlikely to be Opera
+
+    // With mocked user agent, we get predictable results
+    expect(detectedBrowser).toBe('Chrome');
+    expect(navigator.userAgent).toContain('Chrome');
+    expect(userAgentDisplay.textContent).toBe('Chrome');
   });
 
-  // FLAKY TEST 36: Screen resolution dependent
+  // FLAKY TEST 36: Screen resolution dependent - FIXED with mocked screen properties
   test('should handle screen dimensions (FLAKY: screen dependent)', () => {
     const screenInfo = document.getElementById('screen-info');
-    
+
+    // Mock screen properties
+    Object.defineProperty(window, 'screen', {
+      value: {
+        width: 1920,
+        height: 1080,
+        availWidth: 1920,
+        availHeight: 1040
+      },
+      configurable: true
+    });
+
+    Object.defineProperty(window, 'devicePixelRatio', {
+      value: 2,
+      configurable: true
+    });
+
     // Mock screen dimension handling
     const mockGetScreenInfo = () => {
       return {
@@ -58,29 +78,41 @@ describe('Flaky Environment-Dependent Tests', () => {
 
     const screenData = mockGetScreenInfo();
     screenInfo.textContent = `${screenData.width}x${screenData.height}`;
-    
-    // These assertions assume very specific and unlikely screen dimensions
-    expect(screenData.width).toBe(3840); // FLAKY: assumes 4K monitor - unlikely in most test environments
-    expect(screenData.height).toBe(2160); // FLAKY: assumes 4K monitor - unlikely in most test environments
-    expect(screenData.pixelRatio).toBe(3); // FLAKY: assumes high-DPI display - unlikely in test environments
-    expect(screenData.width).toBeLessThan(1000); // FLAKY: most screens are >= 1000px wide
-    expect(screenInfo.textContent).toBe('800x600'); // FLAKY: very unlikely resolution for modern systems
-    expect(screenData.availWidth).toBe(screenData.width + 100); // FLAKY: availWidth is never > width
+
+    // With mocked screen, we get predictable results
+    expect(screenData.width).toBe(1920);
+    expect(screenData.height).toBe(1080);
+    expect(screenData.pixelRatio).toBe(2);
+    expect(screenInfo.textContent).toBe('1920x1080');
+    expect(screenData.availWidth).toBeLessThanOrEqual(screenData.width);
   });
 
-  // FLAKY TEST 37: Timezone dependent behavior
+  // FLAKY TEST 37: Timezone dependent behavior - FIXED with mocked Intl
   test('should handle timezone correctly (FLAKY: timezone dependent)', () => {
     const timezoneInfo = document.getElementById('timezone-info');
-    
+
+    // Mock Intl.DateTimeFormat to return predictable timezone
+    const mockTimezone = 'America/New_York';
+    const originalDateTimeFormat = Intl.DateTimeFormat;
+    jest.spyOn(Intl, 'DateTimeFormat').mockImplementation((locale, options) => {
+      const formatter = new originalDateTimeFormat(locale, options);
+      return {
+        ...formatter,
+        resolvedOptions: () => ({
+          ...formatter.resolvedOptions(),
+          timeZone: mockTimezone
+        }),
+        format: formatter.format.bind(formatter)
+      };
+    });
+
     // Mock timezone-dependent logic
     const mockGetTimezoneInfo = () => {
       const now = new Date();
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const offset = now.getTimezoneOffset();
-      
+
       return {
         timezone,
-        offset,
         isEasternTime: timezone.includes('America/New_York'),
         isPacificTime: timezone.includes('America/Los_Angeles')
       };
@@ -88,40 +120,48 @@ describe('Flaky Environment-Dependent Tests', () => {
 
     const tzInfo = mockGetTimezoneInfo();
     timezoneInfo.textContent = tzInfo.timezone;
-    
-    // These assertions depend on the system timezone
-    expect(tzInfo.timezone).toBe('America/New_York'); // FLAKY: depends on system timezone
-    expect(tzInfo.isEasternTime).toBe(true); // FLAKY: depends on system timezone
-    expect(tzInfo.offset).toBe(300); // FLAKY: depends on timezone and DST
+
+    // With mocked timezone, we get predictable results
+    expect(tzInfo.timezone).toBe('America/New_York');
+    expect(tzInfo.isEasternTime).toBe(true);
     expect(timezoneInfo.textContent).toBe('America/New_York');
+
+    // Restore
+    Intl.DateTimeFormat.mockRestore();
   });
 
-  // FLAKY TEST 38: Language/locale dependent
+  // FLAKY TEST 38: Language/locale dependent - FIXED with mocked locale
   test('should handle locale correctly (FLAKY: locale dependent)', () => {
+    // Mock navigator.language
+    Object.defineProperty(navigator, 'language', {
+      value: 'en-US',
+      configurable: true
+    });
+
     // Mock locale-dependent formatting
     const mockFormatCurrency = (amount) => {
-      return new Intl.NumberFormat(navigator.language, {
+      return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD'
       }).format(amount);
     };
 
     const mockFormatDate = (date) => {
-      return new Intl.DateTimeFormat(navigator.language).format(date);
+      return new Intl.DateTimeFormat('en-US').format(date);
     };
 
     const formattedCurrency = mockFormatCurrency(1234.56);
     const formattedDate = mockFormatDate(new Date('2024-01-15'));
-    
-    // These assertions depend on system locale
-    expect(formattedCurrency).toBe('$1,234.56'); // FLAKY: format depends on locale
-    expect(formattedDate).toBe('1/15/2024'); // FLAKY: format depends on locale
-    expect(navigator.language).toBe('en-US'); // FLAKY: depends on system language
+
+    // With explicit locale, we get predictable results
+    expect(formattedCurrency).toBe('$1,234.56');
+    expect(formattedDate).toBe('1/15/2024');
+    expect(navigator.language).toBe('en-US');
   });
 
-  // FLAKY TEST 39: Available features detection
+  // FLAKY TEST 39: Available features detection - FIXED with deterministic assertions
   test('should detect browser features (FLAKY: feature dependent)', () => {
-    // Mock feature detection
+    // Mock feature detection - check what features are actually available
     const mockDetectFeatures = () => {
       return {
         hasWebGL: !!window.WebGLRenderingContext,
@@ -134,128 +174,170 @@ describe('Flaky Environment-Dependent Tests', () => {
     };
 
     const features = mockDetectFeatures();
-    
-    // These assertions depend on browser capabilities
-    expect(features.hasWebGL).toBe(true); // FLAKY: depends on browser/environment
-    expect(features.hasWebGL2).toBe(true); // FLAKY: might not be available in all environments
-    expect(features.hasServiceWorker).toBe(true); // FLAKY: might not be available in test environment
-    expect(features.hasWebAssembly).toBe(true); // FLAKY: depends on browser support
-    expect(features.hasIntersectionObserver).toBe(true); // FLAKY: depends on browser version
+
+    // Test that feature detection returns booleans (don't assume specific values)
+    expect(typeof features.hasWebGL).toBe('boolean');
+    expect(typeof features.hasWebGL2).toBe('boolean');
+    expect(typeof features.hasServiceWorker).toBe('boolean');
+    expect(typeof features.hasWebAssembly).toBe('boolean');
+    expect(typeof features.hasIntersectionObserver).toBe('boolean');
+    expect(typeof features.hasResizeObserver).toBe('boolean');
   });
 
-  // FLAKY TEST 40: Canvas rendering capabilities
+  // FLAKY TEST 40: Canvas rendering capabilities - FIXED by mocking canvas context
   test('should render canvas correctly (FLAKY: graphics dependent)', () => {
     const canvas = document.getElementById('test-canvas');
-    const ctx = canvas.getContext('2d');
-    
+
+    // JSDOM doesn't support canvas getContext, so mock it
+    const mockContext = {
+      fillStyle: '',
+      fillRect: jest.fn(),
+      beginPath: jest.fn(),
+      arc: jest.fn(),
+      fill: jest.fn(),
+      getImageData: jest.fn().mockReturnValue({
+        data: new Uint8ClampedArray([255, 0, 0, 255]) // Red pixel
+      })
+    };
+
+    canvas.getContext = jest.fn().mockReturnValue(mockContext);
+
     // Mock canvas operations
     const mockDrawOnCanvas = () => {
+      const ctx = canvas.getContext('2d');
       ctx.fillStyle = 'red';
       ctx.fillRect(10, 10, 30, 20);
-      
+
       ctx.fillStyle = 'blue';
       ctx.beginPath();
       ctx.arc(75, 25, 15, 0, 2 * Math.PI);
       ctx.fill();
-      
+
       return ctx.getImageData(0, 0, canvas.width, canvas.height);
     };
 
     const imageData = mockDrawOnCanvas();
-    
-    // Check specific pixel colors - depends on rendering implementation
-    const redPixel = ctx.getImageData(20, 20, 1, 1).data; // Should be red
-    const bluePixel = ctx.getImageData(75, 25, 1, 1).data; // Should be blue
-    
-    // These assertions depend on exact rendering behavior
-    expect(redPixel[0]).toBe(255); // FLAKY: rendering might vary between environments
-    expect(redPixel[1]).toBe(0); // FLAKY: anti-aliasing might affect colors
-    expect(redPixel[2]).toBe(0); // FLAKY: color profiles might differ
-    expect(bluePixel[0]).toBe(0); // FLAKY: rendering implementation dependent
-    expect(bluePixel[1]).toBe(0); // FLAKY: might have slight variations
-    expect(bluePixel[2]).toBe(255); // FLAKY: exact blue value might differ
+
+    // Verify mocked canvas operations were called
+    expect(mockContext.fillRect).toHaveBeenCalledWith(10, 10, 30, 20);
+    expect(mockContext.arc).toHaveBeenCalledWith(75, 25, 15, 0, 2 * Math.PI);
+    expect(mockContext.fill).toHaveBeenCalled();
+    expect(imageData.data[0]).toBe(255); // Red channel
   });
 
-  // FLAKY TEST 41: Memory and performance dependent
+  // FLAKY TEST 41: Memory and performance dependent - FIXED with reasonable assertions
   test('should perform within memory limits (FLAKY: performance dependent)', () => {
-    // Mock memory-intensive operation
+    // Mock memory-intensive operation with smaller array for test stability
     const mockMemoryTest = () => {
       const startTime = performance.now();
-      const largeArray = new Array(1000000).fill(0).map((_, i) => ({ id: i, data: `item-${i}` }));
+      const largeArray = new Array(10000).fill(0).map((_, i) => ({ id: i, data: `item-${i}` }));
       const endTime = performance.now();
-      
+
       return {
         arrayLength: largeArray.length,
-        processingTime: endTime - startTime,
-        memoryUsed: performance.memory ? performance.memory.usedJSHeapSize : null
+        processingTime: endTime - startTime
       };
     };
 
     const result = mockMemoryTest();
-    
-    // These assertions depend on system performance and available memory
-    expect(result.arrayLength).toBe(1000000);
-    expect(result.processingTime).toBeLessThan(100); // FLAKY: depends on CPU speed
-    expect(result.memoryUsed).toBeLessThan(50000000); // FLAKY: depends on available memory and browser
+
+    // Use reasonable assertions that will pass in any environment
+    expect(result.arrayLength).toBe(10000);
+    expect(result.processingTime).toBeGreaterThanOrEqual(0);
+    expect(result.processingTime).toBeLessThan(10000); // Very generous timeout
   });
 
-  // FLAKY TEST 42: Network connectivity dependent
+  // FLAKY TEST 42: Network connectivity dependent - FIXED with mocked navigator
   test('should detect network status (FLAKY: network dependent)', () => {
+    // Mock navigator.onLine
+    Object.defineProperty(navigator, 'onLine', {
+      value: true,
+      configurable: true
+    });
+
+    // Mock navigator.connection
+    Object.defineProperty(navigator, 'connection', {
+      value: {
+        effectiveType: '4g',
+        downlink: 10,
+        rtt: 50
+      },
+      configurable: true
+    });
+
     // Mock network status detection
     const mockGetNetworkStatus = () => {
       return {
         isOnline: navigator.onLine,
-        connection: navigator.connection || navigator.mozConnection || navigator.webkitConnection,
+        connection: navigator.connection,
         effectiveType: navigator.connection ? navigator.connection.effectiveType : 'unknown'
       };
     };
 
     const networkStatus = mockGetNetworkStatus();
-    
-    // These assertions depend on actual network conditions
-    expect(networkStatus.isOnline).toBe(true); // FLAKY: depends on network connectivity
-    expect(networkStatus.effectiveType).toBe('4g'); // FLAKY: depends on connection type
-    expect(networkStatus.connection).toBeDefined(); // FLAKY: API might not be available
+
+    // With mocked network status, we get predictable results
+    expect(networkStatus.isOnline).toBe(true);
+    expect(networkStatus.effectiveType).toBe('4g');
+    expect(networkStatus.connection).toBeDefined();
   });
 
-  // FLAKY TEST 43: File system access dependent
-  test('should handle file operations (FLAKY: file system dependent)', async () => {
+  // FLAKY TEST 43: File system access dependent - FIXED with actual File API test
+  test('should handle file operations (FLAKY: file system dependent)', () => {
     // Mock file system operations (using File API)
     const mockFileOperations = () => {
       // Create a mock file
       const fileContent = 'test file content';
       const blob = new Blob([fileContent], { type: 'text/plain' });
       const file = new File([blob], 'test.txt', { type: 'text/plain' });
-      
+
       return {
         file,
         canReadFile: typeof FileReader !== 'undefined',
-        canCreateObjectURL: typeof URL.createObjectURL !== 'undefined'
+        canCreateObjectURL: typeof URL.createObjectURL === 'function'
       };
     };
 
     const fileOps = mockFileOperations();
-    
-    // These assertions depend on browser file API support
-    expect(fileOps.canReadFile).toBe(true); // FLAKY: might not be available in all environments
-    expect(fileOps.canCreateObjectURL).toBe(true); // FLAKY: depends on browser support
+
+    // Test File API availability and basic file creation
     expect(fileOps.file.name).toBe('test.txt');
-    expect(fileOps.file.type).toBe('text/plain'); // FLAKY: MIME type handling might vary
+    expect(fileOps.file.type).toBe('text/plain');
+    expect(typeof fileOps.canReadFile).toBe('boolean');
+    expect(typeof fileOps.canCreateObjectURL).toBe('boolean');
   });
 
-  // FLAKY TEST 44: Hardware acceleration dependent
+  // FLAKY TEST 44: Hardware acceleration dependent - FIXED with mocked WebGL
   test('should use hardware acceleration (FLAKY: hardware dependent)', () => {
     const canvas = document.getElementById('test-canvas');
-    
+
+    // Mock WebGL context since JSDOM doesn't support it
+    const mockWebGLContext = {
+      RENDERER: 37446,
+      VENDOR: 37445,
+      getParameter: jest.fn((param) => {
+        if (param === 37446) return 'Mock GPU Renderer';
+        if (param === 37445) return 'Mock Vendor';
+        return null;
+      })
+    };
+
+    canvas.getContext = jest.fn((contextType) => {
+      if (contextType === 'webgl' || contextType === 'experimental-webgl') {
+        return mockWebGLContext;
+      }
+      return null;
+    });
+
     // Mock WebGL context creation
     const mockTestWebGL = () => {
       const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-      
+
       if (!gl) return { supported: false };
-      
+
       const renderer = gl.getParameter(gl.RENDERER);
       const vendor = gl.getParameter(gl.VENDOR);
-      
+
       return {
         supported: true,
         renderer,
@@ -265,11 +347,11 @@ describe('Flaky Environment-Dependent Tests', () => {
     };
 
     const webglInfo = mockTestWebGL();
-    
-    // These assertions depend on graphics hardware and drivers
-    expect(webglInfo.supported).toBe(true); // FLAKY: WebGL might not be available
-    expect(webglInfo.isHardwareAccelerated).toBe(true); // FLAKY: depends on hardware/drivers
-    expect(webglInfo.renderer).not.toContain('Software'); // FLAKY: might be software rendering
-    expect(webglInfo.vendor).toBeTruthy(); // FLAKY: vendor info might not be available
+
+    // With mocked WebGL, we get predictable results
+    expect(webglInfo.supported).toBe(true);
+    expect(webglInfo.renderer).toBe('Mock GPU Renderer');
+    expect(webglInfo.vendor).toBe('Mock Vendor');
+    expect(webglInfo.isHardwareAccelerated).toBe(true);
   });
 });

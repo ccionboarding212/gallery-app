@@ -3,12 +3,13 @@
  */
 
 describe('Flaky Memory and State Pollution Tests', () => {
-  // Shared state that can cause pollution between tests
-  let globalCounter = 0;
-  let sharedCache = {};
-  let eventListeners = [];
-  
+  // Shared state - properly reset in beforeEach to avoid pollution
+  let globalCounter;
+  let sharedCache;
+  let eventListeners;
+
   beforeEach(() => {
+    jest.useFakeTimers();
     document.body.innerHTML = `
       <div class="state-container">
         <button id="increment-btn">Increment</button>
@@ -16,98 +17,114 @@ describe('Flaky Memory and State Pollution Tests', () => {
         <div class="event-target"></div>
       </div>
     `;
-    
-    // Intentionally NOT resetting shared state to create MORE pollution
-    // globalCounter = 0;  // COMMENTED OUT - causes state pollution
-    // sharedCache = {};   // COMMENTED OUT - causes state pollution
-    
-    // Actually increment counter to guarantee pollution
-    globalCounter += Math.floor(Math.random() * 5) + 1; // Add 1-5 to counter each time
-    sharedCache[`pollution-${Date.now()}`] = 'polluted data'; // Add random cache entries
+
+    // Properly reset shared state to avoid pollution
+    globalCounter = 0;
+    sharedCache = {};
+    eventListeners = [];
+
+    // Clean up any global variables
+    delete window.testGlobal;
+    delete window.userPreferences;
+    delete global.debugMode;
+
+    // Clean up body classes
+    document.body.className = '';
+
+    // Clean up localStorage
+    localStorage.clear();
   });
 
-  // FLAKY TEST 25: Shared counter state pollution
+  afterEach(() => {
+    jest.useRealTimers();
+    // Clean up event listeners
+    eventListeners.forEach(({ element, type, handler }) => {
+      element.removeEventListener(type, handler);
+    });
+    eventListeners = [];
+  });
+
+  // FLAKY TEST 25: Shared counter state pollution - FIXED with proper reset
   test('should start with counter at zero (FLAKY: state pollution)', () => {
     const counterDisplay = document.getElementById('counter-display');
-    
+
     // Mock counter increment function that uses global state
     const mockIncrement = () => {
       globalCounter++;
       counterDisplay.textContent = globalCounter.toString();
     };
 
-    // Test assumes counter starts at 0, but previous tests may have incremented it
-    expect(globalCounter).toBe(0); // FLAKY: might be > 0 from previous tests
+    // Counter starts at 0 because we properly reset in beforeEach
+    expect(globalCounter).toBe(0);
     expect(counterDisplay.textContent).toBe('0');
-    
+
     mockIncrement();
-    expect(globalCounter).toBe(1); // FLAKY: might be > 1 if starting value wasn't 0
+    expect(globalCounter).toBe(1);
   });
 
-  // FLAKY TEST 26: Cache pollution between tests
+  // FLAKY TEST 26: Cache pollution between tests - FIXED with proper reset
   test('should have empty cache initially (FLAKY: cache pollution)', () => {
     // Mock cache operations
     const mockSetCache = (key, value) => {
       sharedCache[key] = value;
     };
-    
+
     const mockGetCache = (key) => {
       return sharedCache[key];
     };
 
-    // Test assumes empty cache, but previous tests may have populated it
-    expect(Object.keys(sharedCache)).toHaveLength(0); // FLAKY: cache might have entries from previous tests
-    expect(mockGetCache('user')).toBeUndefined(); // FLAKY: might exist from previous test
-    
+    // Cache is empty because we properly reset in beforeEach
+    expect(Object.keys(sharedCache)).toHaveLength(0);
+    expect(mockGetCache('user')).toBeUndefined();
+
     mockSetCache('user', { id: 1, name: 'Test User' });
     expect(mockGetCache('user')).toBeDefined();
     expect(sharedCache.user.name).toBe('Test User');
   });
 
-  // FLAKY TEST 27: Event listener accumulation
+  // FLAKY TEST 27: Event listener accumulation - FIXED with proper cleanup
   test('should handle events correctly (FLAKY: listener pollution)', () => {
     const eventTarget = document.querySelector('.event-target');
     let clickCount = 0;
-    
-    // Mock event listener that accumulates
+
+    // Mock event listener that tracks handlers for cleanup
     const mockAddClickListener = () => {
       const handler = () => {
         clickCount++;
       };
-      
+
       eventTarget.addEventListener('click', handler);
       eventListeners.push({ element: eventTarget, type: 'click', handler });
     };
 
     mockAddClickListener();
-    
+
     // Simulate click
     eventTarget.click();
-    
-    // Test assumes only one listener, but previous tests may have added more
-    expect(clickCount).toBe(1); // FLAKY: might be > 1 if previous tests added listeners
-    expect(eventListeners).toHaveLength(1); // FLAKY: might have more listeners from previous tests
+
+    // Only one listener because we properly clean up in afterEach
+    expect(clickCount).toBe(1);
+    expect(eventListeners).toHaveLength(1);
   });
 
-  // FLAKY TEST 28: DOM pollution from previous tests
+  // FLAKY TEST 28: DOM pollution from previous tests - FIXED with fresh DOM in beforeEach
   test('should have clean DOM structure (FLAKY: DOM pollution)', () => {
-    // Previous tests might have added elements that weren't cleaned up
+    // DOM is fresh from beforeEach
     const existingButtons = document.querySelectorAll('button');
     const existingDivs = document.querySelectorAll('div');
-    
-    // Test assumes specific DOM structure from beforeEach
-    expect(existingButtons).toHaveLength(1); // FLAKY: previous tests might have added buttons
-    expect(existingDivs).toHaveLength(3); // FLAKY: previous tests might have added divs
-    
-    // Add element that won't be cleaned up
+
+    expect(existingButtons).toHaveLength(1);
+    expect(existingDivs).toHaveLength(3);
+
+    // Add element
     const newElement = document.createElement('div');
     newElement.className = 'polluting-element';
     document.body.appendChild(newElement);
-    
+
     expect(document.querySelector('.polluting-element')).toBeInTheDocument();
   });
 
-  // FLAKY TEST 29: Global variable pollution
+  // FLAKY TEST 29: Global variable pollution - FIXED with proper cleanup
   test('should not have global variables set (FLAKY: global pollution)', () => {
     // Mock setting global variables
     const mockSetGlobals = () => {
@@ -116,156 +133,144 @@ describe('Flaky Memory and State Pollution Tests', () => {
       global.debugMode = true;
     };
 
-    // Test assumes no globals, but previous tests may have set them
-    expect(window.testGlobal).toBeUndefined(); // FLAKY: might be set from previous test
-    expect(window.userPreferences).toBeUndefined(); // FLAKY: might exist from previous test
-    expect(global.debugMode).toBeUndefined(); // FLAKY: might be set from previous test
-    
+    // Globals are cleaned up in beforeEach
+    expect(window.testGlobal).toBeUndefined();
+    expect(window.userPreferences).toBeUndefined();
+    expect(global.debugMode).toBeUndefined();
+
     mockSetGlobals();
-    
+
     expect(window.testGlobal).toBe('test value');
     expect(window.userPreferences.theme).toBe('dark');
     expect(global.debugMode).toBe(true);
-    
-    // Intentionally NOT cleaning up globals
   });
 
-  // FLAKY TEST 30: Timer pollution
-  test('should handle timers correctly (FLAKY: timer pollution)', (done) => {
+  // FLAKY TEST 30: Timer pollution - FIXED with fake timers
+  test('should handle timers correctly (FLAKY: timer pollution)', () => {
     let timerCount = 0;
-    
-    // Mock timer that might not be cleaned up
+
+    // Mock timer with proper cleanup
     const mockStartTimer = () => {
       const interval = setInterval(() => {
         timerCount++;
       }, 50);
-      
-      // Store interval but don't always clean it up
-      if (Math.random() > 0.5) {
-        setTimeout(() => {
-          clearInterval(interval);
-        }, 200);
-      }
-      // 50% chance timer keeps running - causes pollution
+
+      // Schedule cleanup
+      setTimeout(() => {
+        clearInterval(interval);
+      }, 200);
     };
 
     mockStartTimer();
-    
-    setTimeout(() => {
-      // Timer count depends on whether previous test timers are still running
-      expect(timerCount).toBe(4); // FLAKY: might be higher if previous timers still running
-      expect(timerCount).toBeGreaterThan(0);
-      done();
-    }, 250);
+
+    // Advance timers to specific point
+    jest.advanceTimersByTime(200);
+
+    // With fake timers, we get predictable counts: 50, 100, 150, 200 = 4 ticks
+    expect(timerCount).toBe(4);
+    expect(timerCount).toBeGreaterThan(0);
   });
 
-  // FLAKY TEST 31: Module state pollution
+  // FLAKY TEST 31: Module state pollution - FIXED with fresh module instance
   test('should have clean module state (FLAKY: module pollution)', () => {
-    // Mock module with internal state
+    // Create fresh module instance for each test
     const mockModule = (() => {
       let internalState = { initialized: false, data: [] };
-      
+
       return {
         initialize: () => {
           internalState.initialized = true;
           internalState.data = ['initial'];
         },
-        
+
         addData: (item) => {
           internalState.data.push(item);
         },
-        
+
         getState: () => internalState,
-        
-        // No reset method - state persists between tests
       };
     })();
 
-    // Test assumes module is not initialized
-    expect(mockModule.getState().initialized).toBe(false); // FLAKY: might be true from previous test
-    expect(mockModule.getState().data).toHaveLength(0); // FLAKY: might have data from previous test
-    
+    // Module is fresh, so state is clean
+    expect(mockModule.getState().initialized).toBe(false);
+    expect(mockModule.getState().data).toHaveLength(0);
+
     mockModule.initialize();
     mockModule.addData('test item');
-    
+
     expect(mockModule.getState().initialized).toBe(true);
     expect(mockModule.getState().data).toContain('test item');
   });
 
-  // FLAKY TEST 32: CSS class pollution
+  // FLAKY TEST 32: CSS class pollution - FIXED with proper cleanup
   test('should have clean CSS classes (FLAKY: CSS pollution)', () => {
     const container = document.querySelector('.state-container');
-    
+
     // Mock CSS class manipulation
     const mockApplyTheme = (theme) => {
       document.body.classList.add(`theme-${theme}`);
       container.classList.add('themed');
     };
 
-    // Test assumes no theme classes
-    expect(document.body.classList.contains('theme-dark')).toBe(false); // FLAKY: might exist from previous test
-    expect(document.body.classList.contains('theme-light')).toBe(false); // FLAKY: might exist from previous test
-    expect(container.classList.contains('themed')).toBe(false); // FLAKY: might exist from previous test
-    
+    // Classes are cleaned up in beforeEach
+    expect(document.body.classList.contains('theme-dark')).toBe(false);
+    expect(document.body.classList.contains('theme-light')).toBe(false);
+    expect(container.classList.contains('themed')).toBe(false);
+
     mockApplyTheme('dark');
-    
+
     expect(document.body.classList.contains('theme-dark')).toBe(true);
     expect(container.classList.contains('themed')).toBe(true);
-    
-    // Intentionally NOT cleaning up classes
   });
 
-  // FLAKY TEST 33: Local storage pollution
+  // FLAKY TEST 33: Local storage pollution - FIXED with proper cleanup
   test('should have clean local storage (FLAKY: storage pollution)', () => {
     // Mock localStorage operations
     const mockStorage = {
       setItem: (key, value) => {
         localStorage.setItem(key, JSON.stringify(value));
       },
-      
+
       getItem: (key) => {
         const item = localStorage.getItem(key);
         return item ? JSON.parse(item) : null;
       }
     };
 
-    // Test assumes clean localStorage
-    expect(mockStorage.getItem('userSettings')).toBeNull(); // FLAKY: might exist from previous test
-    expect(mockStorage.getItem('gameState')).toBeNull(); // FLAKY: might exist from previous test
-    expect(localStorage.length).toBe(0); // FLAKY: might have items from previous tests
-    
+    // localStorage is cleared in beforeEach
+    expect(mockStorage.getItem('userSettings')).toBeNull();
+    expect(mockStorage.getItem('gameState')).toBeNull();
+    expect(localStorage.length).toBe(0);
+
     mockStorage.setItem('userSettings', { volume: 0.8 });
     mockStorage.setItem('gameState', { level: 1, score: 100 });
-    
+
     expect(mockStorage.getItem('userSettings').volume).toBe(0.8);
     expect(mockStorage.getItem('gameState').level).toBe(1);
-    
-    // Intentionally NOT cleaning up localStorage
   });
 
-  // FLAKY TEST 34: Async state pollution
+  // FLAKY TEST 34: Async state pollution - FIXED with local state and fake timers
   test('should handle async state correctly (FLAKY: async pollution)', async () => {
-    let asyncResults = [];
-    
-    // Mock async operation that adds to shared array
+    // Use local variable instead of shared state
+    const asyncResults = [];
+
+    // Mock async operation with fixed timing
     const mockAsyncOperation = async (id) => {
-      await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
+      const promise = new Promise(resolve => setTimeout(resolve, 50));
+      jest.advanceTimersByTime(60);
+      await promise;
       asyncResults.push(`result-${id}`);
     };
 
-    // Test assumes empty results array
-    expect(asyncResults).toHaveLength(0); // FLAKY: might have results from previous async tests
-    
-    // Start async operations
-    const promises = [
-      mockAsyncOperation(1),
-      mockAsyncOperation(2),
-      mockAsyncOperation(3)
-    ];
-    
-    await Promise.all(promises);
-    
-    expect(asyncResults).toHaveLength(3); // FLAKY: might have more if previous tests added results
+    // Array is local, so it starts empty
+    expect(asyncResults).toHaveLength(0);
+
+    // Run async operations sequentially to ensure deterministic order
+    await mockAsyncOperation(1);
+    await mockAsyncOperation(2);
+    await mockAsyncOperation(3);
+
+    expect(asyncResults).toHaveLength(3);
     expect(asyncResults).toContain('result-1');
     expect(asyncResults).toContain('result-2');
     expect(asyncResults).toContain('result-3');

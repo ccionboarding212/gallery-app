@@ -6,6 +6,7 @@ describe('Flaky DOM-Dependent Tests', () => {
   let mockHTML;
 
   beforeEach(() => {
+    jest.useFakeTimers();
     mockHTML = `
       <div class="dynamic-container">
         <button id="add-element">Add Element</button>
@@ -17,161 +18,154 @@ describe('Flaky DOM-Dependent Tests', () => {
     document.body.innerHTML = mockHTML;
   });
 
-  // FLAKY TEST 6: DOM element availability timing
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  // FLAKY TEST 6: DOM element availability timing - FIXED with fake timers
   test('should find dynamically created elements (FLAKY: DOM timing)', () => {
     const container = document.getElementById('element-list');
     const addButton = document.getElementById('add-element');
-    
-    // Mock dynamic element creation with longer variable timing
+
+    // Mock dynamic element creation with fixed timing
     const mockAddElement = () => {
-      const delay = Math.random() * 150 + 50; // 50-200ms delay - much longer
       setTimeout(() => {
         const newElement = document.createElement('div');
         newElement.className = 'dynamic-item';
         newElement.textContent = 'Dynamic Item';
         container.appendChild(newElement);
-      }, delay);
+      }, 100); // Fixed delay
     };
 
     mockAddElement();
-    
-    // Add a small delay that's insufficient most of the time
-    setTimeout(() => {
-      const dynamicElement = document.querySelector('.dynamic-item');
-      expect(dynamicElement).toBeInTheDocument(); // FLAKY: element will not exist ~75% of the time
-      expect(dynamicElement.textContent).toBe('Dynamic Item'); // FLAKY: will throw ~75% of the time
-    }, 80); // 80ms check - usually before 50-200ms creation completes
+
+    // Advance timers past element creation
+    jest.advanceTimersByTime(150);
+
+    const dynamicElement = document.querySelector('.dynamic-item');
+    expect(dynamicElement).toBeInTheDocument();
+    expect(dynamicElement.textContent).toBe('Dynamic Item');
   });
 
-  // FLAKY TEST 7: Element dimensions and rendering
+  // FLAKY TEST 7: Element dimensions and rendering - FIXED with synchronous style application
   test('should measure element dimensions correctly (FLAKY: rendering timing)', () => {
     const measurementBox = document.querySelector('.measurement-box');
     const renderTarget = document.querySelector('.render-target');
-    
-    // Mock dynamic styling that affects measurements
-    const mockApplyStyles = () => {
-      // Simulate CSS loading/application delay
-      setTimeout(() => {
-        measurementBox.style.padding = '10px';
-        measurementBox.style.border = '2px solid black';
-        renderTarget.style.display = 'block';
-        renderTarget.style.width = '200px';
-        renderTarget.style.height = '100px';
-      }, Math.random() * 30); // 0-30ms delay
-    };
 
-    mockApplyStyles();
-    
-    // Measure immediately - styles might not be applied yet
-    const boxRect = measurementBox.getBoundingClientRect();
-    const targetRect = renderTarget.getBoundingClientRect();
-    
-    // These assertions depend on styles being applied
-    expect(boxRect.width).toBe(124); // FLAKY: 100 + 20 padding + 4 border, but styles might not be applied
-    expect(boxRect.height).toBe(74); // FLAKY: 50 + 20 padding + 4 border, but styles might not be applied
-    expect(targetRect.width).toBe(200); // FLAKY: might be 0 if styles not applied
-    expect(targetRect.height).toBe(100); // FLAKY: might be 0 if styles not applied
+    // Apply styles synchronously for deterministic testing
+    measurementBox.style.padding = '10px';
+    measurementBox.style.border = '2px solid black';
+    renderTarget.style.display = 'block';
+    renderTarget.style.width = '200px';
+    renderTarget.style.height = '100px';
+
+    // In JSDOM, getBoundingClientRect returns 0 for most measurements
+    // So we test the style values directly instead
+    expect(measurementBox.style.padding).toBe('10px');
+    expect(measurementBox.style.border).toBe('2px solid black');
+    expect(renderTarget.style.width).toBe('200px');
+    expect(renderTarget.style.height).toBe('100px');
   });
 
-  // FLAKY TEST 8: Event listener attachment timing
+  // FLAKY TEST 8: Event listener attachment timing - FIXED with fake timers
   test('should handle events on dynamically created elements (FLAKY: event timing)', () => {
     const container = document.getElementById('element-list');
     let clickCount = 0;
-    
+
     // Mock creating element with event listener
     const mockCreateClickableElement = () => {
       const element = document.createElement('button');
       element.className = 'clickable-item';
       element.textContent = 'Click me';
-      
+
       // Add to DOM first
       container.appendChild(element);
-      
-      // Add event listener with longer delay (simulating framework behavior)
+
+      // Add event listener with fixed delay
       setTimeout(() => {
         element.addEventListener('click', () => {
           clickCount++;
         });
-      }, Math.random() * 100 + 50); // 50-150ms delay for event listener attachment
-      
+      }, 100);
+
       return element;
     };
 
     const clickableElement = mockCreateClickableElement();
-    
-    // Try to click after short delay - event listener will often not be attached yet
-    setTimeout(() => {
-      clickableElement.click();
-      expect(clickCount).toBe(1); // FLAKY: will be 0 about 70% of the time
-      expect(clickableElement).toBeInTheDocument();
-    }, 75); // 75ms - often before 50-150ms listener attachment
+
+    // Advance timers past event listener attachment
+    jest.advanceTimersByTime(150);
+
+    // Now click - event listener should be attached
+    clickableElement.click();
+    expect(clickCount).toBe(1);
+    expect(clickableElement).toBeInTheDocument();
   });
 
-  // FLAKY TEST 9: CSS class application timing
+  // FLAKY TEST 9: CSS class application timing - FIXED with fake timers
   test('should apply CSS classes correctly (FLAKY: class timing)', () => {
     const renderTarget = document.querySelector('.render-target');
     let transitionCompleted = false;
-    
+
     // Mock CSS class application with transition
     const mockApplyTransition = () => {
       renderTarget.classList.add('fade-in');
-      
+
       // Simulate CSS transition completion detection
       setTimeout(() => {
         transitionCompleted = true;
-      }, Math.random() * 100 + 50); // 50-150ms
+      }, 100); // Fixed timing
     };
 
     mockApplyTransition();
-    
+
     // Check class application immediately
     expect(renderTarget.classList.contains('fade-in')).toBe(true);
-    
-    // Check transition completion at fixed time
-    setTimeout(() => {
-      expect(transitionCompleted).toBe(true); // FLAKY: transition might not be complete
-    }, 75); // Fixed 75ms - might be before or after random completion time
+
+    // Advance timers past transition completion
+    jest.advanceTimersByTime(150);
+
+    expect(transitionCompleted).toBe(true);
   });
 
-  // FLAKY TEST 10: Multiple DOM mutations
+  // FLAKY TEST 10: Multiple DOM mutations - FIXED with fake timers
   test('should handle multiple DOM mutations correctly (FLAKY: mutation timing)', () => {
     const container = document.getElementById('element-list');
     const mutations = [];
-    
-    // Mock MutationObserver-like behavior
+
+    // Mock MutationObserver-like behavior with fixed timing
     const mockObserveMutations = () => {
-      // Simulate multiple DOM changes with different timing
       setTimeout(() => {
         const div1 = document.createElement('div');
         div1.textContent = 'First';
         container.appendChild(div1);
         mutations.push('added-first');
-      }, Math.random() * 20);
-      
+      }, 20);
+
       setTimeout(() => {
         const div2 = document.createElement('div');
         div2.textContent = 'Second';
         container.appendChild(div2);
         mutations.push('added-second');
-      }, Math.random() * 40 + 10);
-      
+      }, 40);
+
       setTimeout(() => {
         const firstChild = container.firstElementChild;
         if (firstChild) {
           container.removeChild(firstChild);
           mutations.push('removed-first');
         }
-      }, Math.random() * 60 + 20);
+      }, 60);
     };
 
     mockObserveMutations();
-    
-    // Check mutations at fixed time - some might not have occurred yet
-    setTimeout(() => {
-      expect(mutations).toContain('added-first'); // FLAKY: might not be added yet
-      expect(mutations).toContain('added-second'); // FLAKY: might not be added yet
-      expect(mutations).toContain('removed-first'); // FLAKY: might not be removed yet
-      expect(container.children.length).toBe(1); // FLAKY: depends on timing of all operations
-    }, 50); // Fixed 50ms check
+
+    // Advance timers past all mutations
+    jest.advanceTimersByTime(100);
+
+    expect(mutations).toContain('added-first');
+    expect(mutations).toContain('added-second');
+    expect(mutations).toContain('removed-first');
+    expect(container.children.length).toBe(1);
   });
 });
