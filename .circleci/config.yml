@@ -1,41 +1,41 @@
-# This config was automatically generated from your source code. Adding this line to trigger a pipeline
-# Stacks detected: cicd:github-actions:.github/workflows,deps:node:.,package_manager:yarn:,test:jest:
+# CircleCI configuration for gallery-app
 version: 2.1
 orbs:
   node: circleci/node@5
 jobs:
   test-node:
-    # Install node dependencies and run tests
     executor: node/default
+    resource_class: medium
+    parallelism: 2
     environment:
       JEST_JUNIT_OUTPUT_DIR: ./test-results/
+      NODE_ENV: test
     steps:
       - checkout
       - node/install-packages:
           pkg-manager: yarn
+          cache-version: v1
       - run:
+          name: Install test reporter
           command: yarn add jest-junit --ignore-workspace-root-check
       - run:
-          name: Run tests
-          command: yarn run test --ci --runInBand --reporters=default --reporters=jest-junit
+          name: Run tests with parallelism
+          command: |
+            TEST_FILES=$(circleci tests glob "tests/**/*.test.js" | circleci tests split --split-by=timings)
+            yarn run test --ci --reporters=default --reporters=jest-junit $TEST_FILES
       - store_test_results:
           path: ./test-results/
+      - store_artifacts:
+          path: ./test-results/
+          destination: test-results
   deploy:
-    # This is an example deploy job, not actually used by the workflow
     docker:
       - image: cimg/base:stable
     steps:
-      # Replace this with steps to deploy to users
       - run:
           name: deploy
           command: '#e.g. ./deploy.sh'
-      - run:
-          name: found github actions config
-          command: ':'
 workflows:
   build-and-test:
     jobs:
       - test-node
-    # - deploy:
-    #     requires:
-    #       - test-node
